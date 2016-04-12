@@ -1,5 +1,5 @@
 # api-gateway-zmq-logger
-Lua logger for ZMQ with FFI and CZMQ
+Lua logger to send ZMQ messages using `czmq` lib, via Lua FFI.
 
 Table of Contents
 =================
@@ -11,7 +11,7 @@ Table of Contents
 
 Status
 ======
-This module is under active development and it's NOT YET production ready.
+This module is under active development and is considered production ready.
 
 Dependencies
 ============
@@ -20,6 +20,7 @@ This library requires an nginx build,
 the [ngx_lua module](http://wiki.nginx.org/HttpLuaModule), [LuaJIT 2.0](http://luajit.org/luajit.html),
 [api-gateway-zmq-adaptor](https://github.com/adobe-apiplatform/api-gateway-zmq-adaptor) and
 [czmq](http://czmq.zeromq.org/)
+
 
 Sample usage
 ============
