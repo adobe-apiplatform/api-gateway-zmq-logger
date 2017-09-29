@@ -80,7 +80,9 @@ local function check_worker_process(premature)
             ngx.log(ngx.ERR, "failed to create timer to check worker process: ", err)
         end
     else
-        ngx.log(ngx.INFO, "Terminating ZMQ context due to worker termination ...")
+        local ngx_worker_pid_msg = "worker pid=" .. tostring(ngx.worker.pid())
+
+        ngx.log(ngx.INFO, "Terminating ZMQ context due to worker termination; ", ngx_worker_pid_msg)
         -- this should be called when the worker is stopped
         zmqlib.zmq_ctx_destroy(ctx)
     end
