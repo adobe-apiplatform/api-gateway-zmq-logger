@@ -48,7 +48,7 @@ local _M = { _VERSION = '0.1' }
 local mt = { __index = _M }
 _M.SOCKET_TYPE = SOCKET_TYPE
 
-ffi.cdef[[
+ffi.cdef [[
     typedef struct _zctx_t zctx_t;
     extern volatile int zctx_interrupted;
     zctx_t * zctx_new (void);
@@ -63,6 +63,8 @@ ffi.cdef[[
     int zstr_send (void *socket, const char *string);
 
     int zmq_ctx_destroy (void *context);
+
+    void zmq_version (int *major, int *minor, int *patch);
 ]]
 
 
@@ -78,7 +80,9 @@ local function check_worker_process(premature)
             ngx.log(ngx.ERR, "failed to create timer to check worker process: ", err)
         end
     else
-        ngx.log(ngx.INFO, "Terminating ZMQ context due to worker termination ...")
+        local ngx_worker_pid_msg = "worker pid=" .. tostring(ngx.worker.pid())
+
+        ngx.log(ngx.INFO, "Terminating ZMQ context due to worker termination; ", ngx_worker_pid_msg)
         -- this should be called when the worker is stopped
         zmqlib.zmq_ctx_destroy(ctx)
     end
@@ -94,23 +98,73 @@ function _M.new(self)
 end
 
 function _M.connect(self, socket_type, socket_address)
-    if ( socket_type == nil ) then
-        error("Socket type must be provided." )
+    if (socket_type == nil) then
+        error("Socket type must be provided.")
     end
-    if ( socket_address == nil ) then
+
+    if (socket_address == nil) then
         error("Socket address must be provided.")
     end
+
+    local intPtr = ffi.typeof("int[1]")
+    local zmq_version_major_holder = intPtr()
+    local zmq_version_minor_holder = intPtr()
+    local zmq_version_patch_holder = intPtr()
+
+    czmq.zmq_version(zmq_version_major_holder, zmq_version_minor_holder, zmq_version_patch_holder)
+
+    -- Dereference the pointers
+    --noinspection ArrayElementZero
+    local major = tostring(zmq_version_major_holder[0]);
+    --noinspection ArrayElementZero
+    local minor = tostring(zmq_version_minor_holder[0]);
+    --noinspection ArrayElementZero
+    local patch = tostring(zmq_version_patch_holder[0]);
+
+    ngx.log(ngx.INFO, "Using ZeroMQ ", major, ".", minor, ".", patch)
+
     self.socketInst = czmq.zsocket_new(ctx, socket_type)
-    local socket_bound = czmq.zsocket_connect(self.socketInst, socket_address)
+
+    local ngx_worker_pid_msg = "worker pid=" .. tostring(ngx.worker.pid())
+    local socket_address_msg = "socket_address=" .. socket_address
+    local pid_and_address_msg = ngx_worker_pid_msg .. ", " .. socket_address_msg
+
+    if (self.socketInst == nil) then
+        error("Socket could not be created; " .. pid_and_address_msg)
+    end
+
+    local zsocket_connect_result = czmq.zsocket_connect(self.socketInst, socket_address)
+    local zsocket_connect_result_msg = "zsocket_connect result=" .. tostring(zsocket_connect_result)
+    local pid_and_result_msg = ngx_worker_pid_msg .. ", " .. zsocket_connect_result_msg
+
+    if (zsocket_connect_result == 0) then
+        ngx.log(ngx.INFO, "Connected socket; ", pid_and_result_msg)
+    elseif (zsocket_connect_result == -1) then
+        ngx.log(ngx.ERR, "Could not connect socket; ", pid_and_result_msg)
+    else
+        error("Unexpected result while attempting to connect to [" .. socket_address_msg .. "]; " .. pid_and_result_msg)
+    end
 end
 
 function _M.log(self, msg)
-    local send_result = "NOT-SENT"
-    if ( msg ~= nil and #msg > 0 ) then
-        send_result = czmq.zstr_send(self.socketInst, msg )
+    local ngx_worker_pid_msg = "worker pid=" .. tostring(ngx.worker.pid())
+
+    if (msg == nil or #msg == 0) then
+        ngx.log(ngx.WARN, "Nothing to send; ", ngx_worker_pid_msg)
+        return
     end
 
-    ngx.log(ngx.DEBUG, "Message [", tostring(msg), "], sent with result=", tostring(send_result), ", from pid=", ngx.worker.pid() )
+    local zstr_send_result = czmq.zstr_send(self.socketInst, msg)
+    local zstr_send_result_msg = "zstr_send result=" .. tostring(zstr_send_result)
+    local pid_and_result_msg = ngx_worker_pid_msg .. ", " .. zstr_send_result_msg
+
+    if (zstr_send_result == 0) then
+        ngx.log(ngx.DEBUG, "Message [", msg, "] has been sent; ", pid_and_result_msg)
+    elseif (zstr_send_result == -1) then
+        ngx.log(ngx.ERR, "Message [", msg, "] could not be sent; ", pid_and_result_msg)
+    else
+        error("Unexpected result while attempting to send message [" .. msg .. "]; " .. pid_and_result_msg)
+    end
 end
 
 function _M.disconnect(self)
