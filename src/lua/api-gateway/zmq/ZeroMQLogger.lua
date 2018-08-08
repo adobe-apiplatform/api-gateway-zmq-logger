@@ -24,8 +24,6 @@ local setmetatable = setmetatable
 local error = error
 local ffi = require "ffi"
 local ffi_new = ffi.new
-local ffi_str = ffi.string
-local C = ffi.C
 local zmqlib = ffi.load("zmq")
 local czmq = ffi.load("czmq")
 
@@ -68,26 +66,10 @@ ffi.cdef[[
 
 local ctx_v = czmq.zctx_new()
 local ctx = ffi_new("zctx_t *", ctx_v)
-local socketInst
 
-local check_worker_delay = 5
-local function check_worker_process(premature)
-    if not premature then
-        local ok, err = ngx.timer.at(check_worker_delay, check_worker_process)
-        if not ok then
-            ngx.log(ngx.ERR, "failed to create timer to check worker process: ", err)
-        end
-    else
-        ngx.log(ngx.INFO, "Terminating ZMQ context due to worker termination ...")
-        -- this should be called when the worker is stopped
-        zmqlib.zmq_ctx_destroy(ctx)
-    end
-end
+--- garbage collect with destroy
+ffi.gc(ctx, zmqlib.zmq_ctx_destroy)
 
-local ok, err = ngx.timer.at(check_worker_delay, check_worker_process)
-if not ok then
-    ngx.log(ngx.ERR, "failed to create timer to check worker process: ", err)
-end
 
 function _M.new(self)
     return setmetatable({}, mt)
